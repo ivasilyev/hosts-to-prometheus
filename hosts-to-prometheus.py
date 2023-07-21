@@ -152,7 +152,7 @@ def wrap(kwargs: dict):
 def backup_file(file: str, force: bool = False):
     backup = f"{file}.bak"
     if not os.path.exists(backup) or force:
-        copy2(file, file)
+        copy2(file, backup)
         logging.info(f"Created backup: '{file}'")
 
 
