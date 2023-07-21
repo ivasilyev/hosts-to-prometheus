@@ -40,10 +40,20 @@ sudo apt-get install \
     nmap
 
 cd "/opt"
-sudo git clone "https://github.com/ivasilyev/hosts-to-prometheus"
-sudo chmod a+rx "/opt/hosts-to-prometheus"
 
-sudo pip install -r "/opt/hosts-to-prometheus/requirements.txt"
+export TOOL_DIR="/opt/hosts-to-prometheus/"
+
+sudo mkdir -p -m 755 "${TOOL_DIR}"
+
+cd "${TOOL_DIR}" && \
+sudo curl -fsSLO \
+    "https://raw.githubusercontent.com/ivasilyev/hosts-to-prometheus/main/hosts-to-prometheus.py"
+sudo pip install -r \
+    "https://raw.githubusercontent.com/ivasilyev/hosts-to-prometheus/main/requirements.txt"
+
+sudo chmod a+rx "${TOOL_DIR}"
+
+cd
 ```
 
 ## Example run
