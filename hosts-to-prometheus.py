@@ -174,17 +174,17 @@ def process_prometheus_config(file: str, hosts: list):
     for scrape_config_index in range(len(d["scrape_configs"])):
         if not is_inserted and d["scrape_configs"][scrape_config_index]["job_name"] == input_prometheus_job_name:
             for static_config_index in range(len(d["scrape_configs"][scrape_config_index]["static_configs"])):
-                if "targets" in d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index].keys():
-                    d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index]["targets"] = sorted(set(
-                        d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index]["targets"] + hosts
+                if "targets" in d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index].keys():
+                    d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] = sorted(set(
+                        d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] + hosts
                     ))
                     is_inserted = True
                 if (
                     not is_inserted
-                    and "targets" not in d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index]
-                    and static_config_index == len(d["scrape_configs"][scrape_config_index]["static_configs"]) - 1
+                    and "targets" not in d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index].keys()
+                    and static_config_index == len(d["scrape_configs"][static_config_index]["static_configs"]) - 1
                 ):
-                    d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index]["targets"] = sorted(hosts)
+                    d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] = sorted(hosts)
                     is_inserted = True
     backup_file(file)
     dump_yaml(d, file)
