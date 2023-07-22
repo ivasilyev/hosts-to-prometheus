@@ -153,7 +153,41 @@ def backup_file(file: str, force: bool = False):
     backup = f"{file}.bak"
     if not os.path.exists(backup) or force:
         copy2(file, backup)
-        logging.info(f"Created backup: '{file}'")
+        logging.info(f"Created backup: '{backup}'")
+
+
+def process_prometheus_config(file: str, hosts: list):
+    hosts = list(hosts)
+    d = load_yaml(file)
+    is_inserted = False
+    if "scrape_configs" not in d.keys() or len(d["scrape_configs"]) == 0:
+        d["scrape_configs"] = [{
+            "job_name": input_prometheus_job_name,
+            "metrics_path": input_node_exporter_metrics_path,
+            "scheme": os.getenv("PROMETHEUS_DASHBOARD_SCHEME", "http"),
+            "scrape_interval": os.getenv("PROMETHEUS_SCRAPE_INTERVAL", "15s"),
+            "static_configs": [{
+                "targets": sorted(hosts)
+            }]
+        }]
+        is_inserted = True
+    for scrape_config_index in range(len(d["scrape_configs"])):
+        if not is_inserted and d["scrape_configs"][scrape_config_index]["job_name"] == input_prometheus_job_name:
+            for static_config_index in range(len(d["scrape_configs"][scrape_config_index]["static_configs"])):
+                if "targets" in d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index].keys():
+                    d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index]["targets"] = sorted(set(
+                        d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index]["targets"] + hosts
+                    ))
+                    is_inserted = True
+                if (
+                    not is_inserted
+                    and "targets" not in d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index]
+                    and static_config_index == len(d["scrape_configs"][scrape_config_index]["static_configs"]) - 1
+                ):
+                    d["scrape_configs"][scrape_config_index]["static_configs"][scrape_config_index]["targets"] = sorted(hosts)
+                    is_inserted = True
+    backup_file(file)
+    dump_yaml(d, file)
 
 
 def reload_prometheus_soft(
@@ -217,19 +251,9 @@ if __name__ == '__main__':
     ready_hosts_0 = mp_queue(wrap, wrapped_queue)
     ready_hosts = sorted([i for i in ready_hosts_0 if not i.endswith(":0")])
 
-    yaml_dict = load_yaml(input_prometheus_config_file)
-
-    yaml_dict["scrape_configs"].append({
-        "job_name": input_prometheus_job_name,
-        "metrics_path": input_node_exporter_metrics_path,
-        "scheme": os.getenv("PROMETHEUS_DASHBOARD_SCHEME", "http"),
-        "scrape_interval": "15s",
-        "static_configs": [{
-            "targets": ready_hosts
-        }]
-    })
-
-    backup_file(input_prometheus_config_file)
-    dump_yaml(yaml_dict, input_prometheus_config_file)
+    process_prometheus_config(
+        file=input_prometheus_config_file,
+        hosts=ready_hosts
+    )
 
     reload_prometheus()

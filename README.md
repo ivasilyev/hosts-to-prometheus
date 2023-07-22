@@ -51,7 +51,7 @@ sudo curl -fsSLO \
 sudo pip install -r \
     "https://raw.githubusercontent.com/ivasilyev/hosts-to-prometheus/main/requirements.txt"
 
-sudo chmod a+rx "${TOOL_DIR}"
+sudo chmod -R a+rx "${TOOL_DIR}"
 
 cd
 ```
