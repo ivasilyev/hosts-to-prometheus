@@ -108,9 +108,9 @@ def dump_yaml(d: dict, file: str):
 
 def nmap(host: str, ports: str):
     o = go(f"sudo nmap -p {ports} -sT -oG - {host} | grep -oP '(?<= )[0-9]+(?=/open/tcp)' 2>/dev/null")
-    out = sorted(split_lines(o))
+    out = sorted_set(split_lines(o))
     logging.debug(f"'nmap' with 'grep' for '{host}' returned '{out}'")
-    return sorted(split_lines(o))
+    return out
 
 
 def is_url_ok(
@@ -136,7 +136,7 @@ def is_url_ok(
     return False
 
 
-def check_ports(host: str, ports: list) -> int:
+def check_ports(host: str, ports: list):
     logging.debug(f"Ports to check for '{host}': {len(ports)}")
     template = "{scheme}://{host}:{port}{metrics_path}"
     urls = {
@@ -152,15 +152,15 @@ def check_ports(host: str, ports: list) -> int:
         logging.debug(f"Opened port found for '{host}': {good_ports[0]}")
         return good_ports[0]
     logging.debug(f"No ports found opened for '{host}' within the range '{ports}'")
-    return 0
+    return ""
 
 
 def check_host(host: str, ports: str):
     logging.info(f"Check ports for host '{host}'")
-    open_ports = sorted_set(nmap(host, ports))
+    open_ports = nmap(host, ports)
     if len(open_ports) > 0:
         port = check_ports(host, open_ports)
-        if port > 0:
+        if len(port) > 0:
             return f"{host}:{port}"
     return ""
 
@@ -283,15 +283,16 @@ def parse_args():
                     "file and updates the Prometheus server. ",
         epilog=""
     )
-    p.add_argument("--exporter_port", help="Node Exporter listen port(s), single or range (with hyphen '-')",
+    p.add_argument("--exporter_port", help="(Optional) Node Exporter listen port(s), single or range (via hyphen '-')",
                    default="9100")
-    p.add_argument("--exporter_path", help="Node Exporter metrics path", default="/metrics")
-    p.add_argument("--prometheus_config", help="Prometheus Dashboard Server local configuration file",
+    p.add_argument("--exporter_path", help="(Optional) Node Exporter metrics path", default="/metrics")
+    p.add_argument("--prometheus_config", help="(Optional) Prometheus Dashboard Server local configuration file",
                    default="/etc/prometheus/prometheus.yml")
-    p.add_argument("--prometheus_job", help="Target Prometheus configuration job entry name", default="discovered")
-    p.add_argument("--prometheus_host", help="Prometheus Dashboard Server host", default="127.0.0.1")
-    p.add_argument("--prometheus_port", help="Prometheus Dashboard Server port", default=9090)
-    p.add_argument("--restart", help="Restart Prometheus server", action="store_true")
+    p.add_argument("--prometheus_job", help="(Optional) Target Prometheus configuration job entry name",
+                   default="discovered")
+    p.add_argument("--prometheus_host", help="(Optional) Prometheus Dashboard Server host", default="127.0.0.1")
+    p.add_argument("--prometheus_port", help="(Optional) Prometheus Dashboard Server port", default=9090)
+    p.add_argument("--restart", help="(Optional) Restart Prometheus server", action="store_true")
     ns = p.parse_args()
     return ns
 
