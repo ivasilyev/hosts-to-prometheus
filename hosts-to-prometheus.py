@@ -267,6 +267,11 @@ def process_prometheus_config(file: str, hosts: list):
     dump_yaml(d, file)
 
 
+def reload_prometheus_hard(service_name: str = os.getenv("PROMETHEUS_SERVICE_NAME", "prometheus.service")):
+    logging.info(f"Restart Prometheus service")
+    return go(f"systemctl restart {service_name}")
+
+
 def reload_prometheus_soft(
         host,
         port,
@@ -275,15 +280,15 @@ def reload_prometheus_soft(
 ):
     url = f"{scheme}://{host}:{port}{path}"
     logging.info(f"Reload Prometheus via API URL: '{url}'")
-    response = post(url, timeout=os.getenv("WEB_ATTEMPT_TIMEOUT", 5))
-    response.close()
-    if response.status_code != 200:
-        pass
-
-
-def reload_prometheus_hard(service_name: str = os.getenv("PROMETHEUS_SERVICE_NAME", "prometheus.service")):
-    logging.info(f"Restart Prometheus service")
-    return go(f"systemctl restart {service_name}")
+    try:
+        response = post(url, timeout=os.getenv("WEB_ATTEMPT_TIMEOUT", 5))
+        response.close()
+        if response.status_code == 200:
+            return
+    except Exception as e:
+        logging.warning(f"Connection to '{url}' failed with error: '{e}'")
+    logging.debug("Failed to soft reload Prometheus via API, try to restart it directly")
+    reload_prometheus_hard()
 
 
 def reload_prometheus(hard: bool = False):
