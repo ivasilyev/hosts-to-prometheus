@@ -8,8 +8,8 @@ import logging
 from shutil import copy2
 import multiprocessing as mp
 from requests import head, post
+from subprocess import getoutput
 from argparse import ArgumentParser
-from subprocess import getoutput as go
 
 
 HOSTS_FILE = "/etc/hosts"
@@ -28,6 +28,16 @@ def get_logging_level():
     return logging.ERROR
 
 
+def join_lines(s: str):
+    return re.sub("[\r\n ]+", " ", s)
+
+
+def go(cmd: str):
+    o = getoutput(cmd)
+    logging.debug(f"Ran command: '{join_lines(cmd)}' with the output: '{o}'")
+    return o
+
+
 def split_lines(s: str):
     return [i.strip() for i in re.split("[\r\n]+", s)]
 
@@ -42,7 +52,10 @@ def split_columns(s: str, is_space_delimiter: bool = False):
 def split_table(s: str, is_space_delimiter: bool = False):
     o = list()
     for line in split_lines(s):
-        row = [re.sub("^[^#]+(#.*)", "", i) for i in split_columns(line, is_space_delimiter)]
+        row = [
+            re.sub("^[^#]+(#.*)", "", i)
+            for i in split_columns(line, is_space_delimiter)
+        ]
         o.append(row)
     return o
 
@@ -72,7 +85,15 @@ class IndentDumper(yaml.Dumper):
         return super(IndentDumper, self).increase_indent(flow, False)
 
 
+def backup_file(file: str, force: bool = False):
+    backup = f"{file}.bak"
+    if not os.path.exists(backup) or force:
+        copy2(file, backup)
+        logging.info(f"Created backup: '{backup}'")
+
+
 def dump_yaml(d: dict, file: str):
+    backup_file(file)
     s = yaml.dump(d, Dumper=IndentDumper)
     dump_string(s, file)
 
@@ -86,14 +107,24 @@ def is_url_ok(
         try:
             response = head(url, timeout=timeout)
             response.close()
-            return response.status_code == 200
+            out = response.status_code == 200
+            if out:
+                logging.debug(f"Succeed connection attempt {attempt + 1} (of {attempts}) for URL '{url}'")
+            else:
+                logging.debug(f"Failed connection attempt {attempt + 1} (of {attempts}) with "
+                              f"code {response.status_code} for URL '{url}'")
+            return out
         except Exception as e:
+            logging.debug(f"Failed attempt {attempt + 1} (of {attempts}) with exception '{e}' for URL '{url}'")
             pass
+    logging.debug(f"Unreachable url: '{url}'")
     return False
 
 
 def nmap(host: str, ports: str):
     o = go(f"sudo nmap -p {ports} -sT -oG - {host} | grep -oP '(?<= )[0-9]+(?=/open/tcp)' 2>/dev/null")
+    out = sorted(split_lines(o))
+    logging.debug(f"'nmap' with 'grep' for '{host}' returned '{out}'")
     return sorted(split_lines(o))
 
 
@@ -109,11 +140,14 @@ def check_ports(host: str, ports: list):
     }
     good_ports = [k for k, v in urls.items() if is_url_ok(v)]
     if len(good_ports) > 0:
+        logging.debug(f"Opened port found for '{host}': {good_ports[0]}")
         return good_ports[0]
+    logging.debug(f"No ports found opened for '{host}' within the range '{ports}'")
     return 0
 
 
 def check_host(host: str, ports: str):
+    logging.info(f"Check ports for host '{host}'")
     open_ports = nmap(host, ports)
     port = check_ports(host, open_ports)
     return f"{host}:{port}"
@@ -147,7 +181,12 @@ def parse_known_hosts(file: str):
 
 def is_host_pingable(host: str):
     o = go(f"ping -c 5 {host} | grep -oP '(?<= )[0-9]+(?=% packet loss)' 2>/dev/null")
-    return dict(host=host, ready=o.isnumeric() and int(o) < int(os.getenv("PING_PACKET_LOSS_PERCENTAGE", 50)))
+    ready = o.isnumeric() and int(o) < int(os.getenv("PING_PACKET_LOSS_PERCENTAGE", 50))
+    if ready:
+        logging.debug(f"The host is pingable: '{host}'")
+    else:
+        logging.debug(f"The host is not pingable: '{host}'")
+    return dict(host=host, ready=ready)
 
 
 def mp_queue(func, queue: list):
@@ -162,15 +201,12 @@ def wrap(kwargs: dict):
     return kwargs["func"](**kwargs["kwargs"])
 
 
-def backup_file(file: str, force: bool = False):
-    backup = f"{file}.bak"
-    if not os.path.exists(backup) or force:
-        copy2(file, backup)
-        logging.info(f"Created backup: '{backup}'")
+def sorted_set(x: list):
+    return sorted(set(x))
 
 
 def process_prometheus_config(file: str, hosts: list):
-    hosts = list(hosts)
+    hosts = sorted_set(hosts)
     d = load_yaml(file)
     is_inserted = False
     if "scrape_configs" not in d.keys() or len(d["scrape_configs"]) == 0:
@@ -180,18 +216,21 @@ def process_prometheus_config(file: str, hosts: list):
             "scheme": os.getenv("PROMETHEUS_DASHBOARD_SCHEME", "http"),
             "scrape_interval": os.getenv("PROMETHEUS_SCRAPE_INTERVAL", "15s"),
             "static_configs": [{
-                "targets": sorted(hosts)
+                "targets": hosts
             }]
         }]
         is_inserted = True
+        logging.info("Added entire 'scrape_configs' section into Prometheus config")
     for scrape_config_index in range(len(d["scrape_configs"])):
         if not is_inserted and d["scrape_configs"][scrape_config_index]["job_name"] == input_prometheus_job_name:
             for static_config_index in range(len(d["scrape_configs"][scrape_config_index]["static_configs"])):
                 if "targets" in d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index].keys():
-                    d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] = sorted(set(
+                    hosts_1 = sorted_set(
                         d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] + hosts
-                    ))
+                    )
+                    d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] = hosts_1
                     is_inserted = True
+                    logging.info(f"Updated existing Prometheus config scrape section for job '{input_prometheus_job_name}'")
                 if (
                     not is_inserted
                     and "targets" not in d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index].keys()
@@ -199,7 +238,7 @@ def process_prometheus_config(file: str, hosts: list):
                 ):
                     d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] = sorted(hosts)
                     is_inserted = True
-    backup_file(file)
+                    logging.info(f"Added new Prometheus config scrape section for job '{input_prometheus_job_name}'")
     dump_yaml(d, file)
 
 
@@ -209,13 +248,16 @@ def reload_prometheus_soft(
         scheme: str = os.getenv("PROMETHEUS_DASHBOARD_SCHEME", "http"),
         path: str = os.getenv("PROMETHEUS_DASHBOARD_RELOAD_PATH", "/-/reload")
 ):
-    response = post(f"{scheme}://{host}:{port}{path}", timeout=os.getenv("WEB_ATTEMPT_TIMEOUT", 5))
+    url = f"{scheme}://{host}:{port}{path}"
+    logging.info(f"Reload Prometheus via API URL: '{url}'")
+    response = post(url, timeout=os.getenv("WEB_ATTEMPT_TIMEOUT", 5))
     response.close()
     if response.status_code != 200:
         pass
 
 
 def reload_prometheus_hard(service_name: str = os.getenv("PROMETHEUS_SERVICE_NAME", "prometheus.service")):
+    logging.info(f"Restart Prometheus service")
     return go(f"systemctl restart {service_name}")
 
 
@@ -278,3 +320,4 @@ if __name__ == '__main__':
     )
 
     reload_prometheus()
+    logging.info("Done")
