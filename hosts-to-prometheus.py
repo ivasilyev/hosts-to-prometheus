@@ -15,6 +15,19 @@ from subprocess import getoutput as go
 HOSTS_FILE = "/etc/hosts"
 
 
+def get_logging_level():
+    var = os.getenv("LOGGING_LEVEL", None)
+    if (
+        var is not None
+        and len(var) > 0
+        and hasattr(logging, var)
+    ):
+        val = getattr(logging, var)
+        if isinstance(val, int) and val in [i * 10 for i in range(0, 6)]:
+            return val
+    return logging.ERROR
+
+
 def split_lines(s: str):
     return [i.strip() for i in re.split("[\r\n]+", s)]
 
@@ -240,6 +253,14 @@ if __name__ == '__main__':
     input_prometheus_job_name = nameSpace.prometheus_job
     input_prometheus_host = nameSpace.prometheus_host
     input_prometheus_port = nameSpace.prometheus_port
+
+    logger = logging.getLogger()
+    logger.setLevel(get_logging_level())
+    stream = logging.StreamHandler()
+    stream.setFormatter(logging.Formatter(
+        u"%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s")
+    )
+    logger.addHandler(stream)
 
     known_hosts = parse_known_hosts(HOSTS_FILE)
 
