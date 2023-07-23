@@ -38,6 +38,14 @@ def go(cmd: str):
     return o
 
 
+def remove_empty_values(x: list):
+    return [i for i in x if len(i) > 0]
+
+
+def sorted_set(x: list):
+    return sorted(set(remove_empty_values(x)))
+
+
 def split_lines(s: str):
     return [i.strip() for i in re.split("[\r\n]+", s)]
 
@@ -98,6 +106,13 @@ def dump_yaml(d: dict, file: str):
     dump_string(s, file)
 
 
+def nmap(host: str, ports: str):
+    o = go(f"sudo nmap -p {ports} -sT -oG - {host} | grep -oP '(?<= )[0-9]+(?=/open/tcp)' 2>/dev/null")
+    out = sorted(split_lines(o))
+    logging.debug(f"'nmap' with 'grep' for '{host}' returned '{out}'")
+    return sorted(split_lines(o))
+
+
 def is_url_ok(
     url: str,
     attempts: int = os.getenv("WEB_ATTEMPT_NUMBER", 5),
@@ -121,14 +136,8 @@ def is_url_ok(
     return False
 
 
-def nmap(host: str, ports: str):
-    o = go(f"sudo nmap -p {ports} -sT -oG - {host} | grep -oP '(?<= )[0-9]+(?=/open/tcp)' 2>/dev/null")
-    out = sorted(split_lines(o))
-    logging.debug(f"'nmap' with 'grep' for '{host}' returned '{out}'")
-    return sorted(split_lines(o))
-
-
-def check_ports(host: str, ports: list):
+def check_ports(host: str, ports: list) -> int:
+    logging.debug(f"Ports to check for '{host}': {len(ports)}")
     template = "{scheme}://{host}:{port}{metrics_path}"
     urls = {
         port: template.format(
@@ -148,9 +157,12 @@ def check_ports(host: str, ports: list):
 
 def check_host(host: str, ports: str):
     logging.info(f"Check ports for host '{host}'")
-    open_ports = nmap(host, ports)
-    port = check_ports(host, open_ports)
-    return f"{host}:{port}"
+    open_ports = sorted_set(nmap(host, ports))
+    if len(open_ports) > 0:
+        port = check_ports(host, open_ports)
+        if port > 0:
+            return f"{host}:{port}"
+    return ""
 
 
 def is_ip_loopback(s: str):
@@ -199,10 +211,6 @@ def mp_queue(func, queue: list):
 
 def wrap(kwargs: dict):
     return kwargs["func"](**kwargs["kwargs"])
-
-
-def sorted_set(x: list):
-    return sorted(set(x))
 
 
 def process_prometheus_config(file: str, hosts: list):
@@ -283,6 +291,7 @@ def parse_args():
     p.add_argument("--prometheus_job", help="Target Prometheus configuration job entry name", default="discovered")
     p.add_argument("--prometheus_host", help="Prometheus Dashboard Server host", default="127.0.0.1")
     p.add_argument("--prometheus_port", help="Prometheus Dashboard Server port", default=9090)
+    p.add_argument("--restart", help="Restart Prometheus server", action="store_true")
     ns = p.parse_args()
     return ns
 
@@ -295,6 +304,7 @@ if __name__ == '__main__':
     input_prometheus_job_name = nameSpace.prometheus_job
     input_prometheus_host = nameSpace.prometheus_host
     input_prometheus_port = nameSpace.prometheus_port
+    input_is_restart = nameSpace.restart
 
     logger = logging.getLogger()
     logger.setLevel(get_logging_level())
@@ -312,12 +322,13 @@ if __name__ == '__main__':
     wrapped_queue = [dict(func=check_host, kwargs=dict(host=i, ports=input_node_exporter_port)) for i in online_hosts]
 
     ready_hosts_0 = mp_queue(wrap, wrapped_queue)
-    ready_hosts = sorted([i for i in ready_hosts_0 if not i.endswith(":0")])
+    ready_hosts = sorted([i for i in ready_hosts_0 if not len(i) > 0])
 
     process_prometheus_config(
         file=input_prometheus_config_file,
         hosts=ready_hosts
     )
 
-    reload_prometheus()
+    reload_prometheus(input_is_restart)
+
     logging.info("Done")
