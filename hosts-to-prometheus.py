@@ -271,9 +271,9 @@ def reload_prometheus_hard(service_name: str = os.getenv("PROMETHEUS_SERVICE_NAM
 
 def reload_prometheus(hard: bool = False):
     if hard:
-        reload_prometheus_soft(input_prometheus_host, input_prometheus_port)
-    else:
         reload_prometheus_hard()
+    else:
+        reload_prometheus_soft(input_prometheus_host, input_prometheus_port)
 
 
 def parse_args():
