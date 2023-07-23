@@ -215,6 +215,7 @@ def wrap(kwargs: dict):
 
 def process_prometheus_config(file: str, hosts: list):
     hosts = sorted_set(hosts)
+    logging.debug(f"Host values to insert: {hosts}")
     d = load_yaml(file)
     is_inserted = False
     if "scrape_configs" not in d.keys() or len(d["scrape_configs"]) == 0:
@@ -230,7 +231,10 @@ def process_prometheus_config(file: str, hosts: list):
         is_inserted = True
         logging.info("Added entire 'scrape_configs' section into Prometheus config")
     for scrape_config_index in range(len(d["scrape_configs"])):
-        if not is_inserted and d["scrape_configs"][scrape_config_index]["job_name"] == input_prometheus_job_name:
+        if (
+            not is_inserted
+            and d["scrape_configs"][scrape_config_index]["job_name"] == input_prometheus_job_name
+        ):
             for static_config_index in range(len(d["scrape_configs"][scrape_config_index]["static_configs"])):
                 if "targets" in d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index].keys():
                     hosts_1 = sorted_set(
@@ -247,12 +251,25 @@ def process_prometheus_config(file: str, hosts: list):
                     d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] = sorted(hosts)
                     is_inserted = True
                     logging.info(f"Added new Prometheus config scrape section for job '{input_prometheus_job_name}'")
+    if not is_inserted:
+        d["scrape_configs"].append({
+            "job_name": input_prometheus_job_name,
+            "metrics_path": input_node_exporter_metrics_path,
+            "scheme": os.getenv("PROMETHEUS_DASHBOARD_SCHEME", "http"),
+            "scrape_interval": os.getenv("PROMETHEUS_SCRAPE_INTERVAL", "15s"),
+            "static_configs": [{
+                "targets": hosts
+            }]
+        })
+        is_inserted = True
+    if not is_inserted:
+        logging.warning(f"Not inserted values: {hosts}")
     dump_yaml(d, file)
 
 
 def reload_prometheus_soft(
         host,
-        port: int = 80,
+        port,
         scheme: str = os.getenv("PROMETHEUS_DASHBOARD_SCHEME", "http"),
         path: str = os.getenv("PROMETHEUS_DASHBOARD_RELOAD_PATH", "/-/reload")
 ):
@@ -328,7 +345,7 @@ if __name__ == '__main__':
     ready_hosts_0 = mp_queue(wrap, wrapped_queue)
     ready_hosts = sorted_set([i for i in ready_hosts_0 if len(i) > 0])
 
-    logging.info("Filter hosts by port availability")
+    logging.info("Commit changes to Prometheus configuration file")
     process_prometheus_config(
         file=input_prometheus_config_file,
         hosts=ready_hosts
