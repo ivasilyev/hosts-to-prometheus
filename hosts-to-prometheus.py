@@ -326,7 +326,7 @@ if __name__ == '__main__':
 
     logging.info("Filter hosts by port availability")
     ready_hosts_0 = mp_queue(wrap, wrapped_queue)
-    ready_hosts = sorted([i for i in ready_hosts_0 if not len(i) > 0])
+    ready_hosts = sorted_set([i for i in ready_hosts_0 if len(i) > 0])
 
     logging.info("Filter hosts by port availability")
     process_prometheus_config(
