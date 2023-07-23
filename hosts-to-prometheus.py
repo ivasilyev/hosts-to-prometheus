@@ -315,21 +315,26 @@ if __name__ == '__main__':
     )
     logger.addHandler(stream)
 
+    logging.info("Load all system hosts")
     known_hosts = parse_known_hosts(HOSTS_FILE)
 
+    logging.info("Filter hosts by network availability")
     online_hosts_0 = mp_queue(is_host_pingable, known_hosts)
     online_hosts = [i["host"] for i in online_hosts_0 if i["ready"] is True]
 
     wrapped_queue = [dict(func=check_host, kwargs=dict(host=i, ports=input_node_exporter_port)) for i in online_hosts]
 
+    logging.info("Filter hosts by port availability")
     ready_hosts_0 = mp_queue(wrap, wrapped_queue)
     ready_hosts = sorted([i for i in ready_hosts_0 if not len(i) > 0])
 
+    logging.info("Filter hosts by port availability")
     process_prometheus_config(
         file=input_prometheus_config_file,
         hosts=ready_hosts
     )
 
+    logging.info("Reload Prometheus")
     reload_prometheus(input_is_restart)
 
     logging.info("Done")
