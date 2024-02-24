@@ -12,7 +12,7 @@ from subprocess import getoutput
 from argparse import ArgumentParser
 
 
-HOSTS_FILE = "/etc/hosts"
+DEFAULT_HOSTS_FILE = "/etc/hosts"
 
 
 def join_lines(s: str):
@@ -303,6 +303,11 @@ def parse_args():
         default="/metrics",
     )
     p.add_argument(
+        "--hosts",
+        help=f"(Optional) Hosts file, default: '{DEFAULT_HOSTS_FILE}'",
+        default=DEFAULT_HOSTS_FILE
+    )
+    p.add_argument(
         "--logging",
         help="(Optional) Logging level",
         type=int,
@@ -315,14 +320,14 @@ def parse_args():
         default="/etc/prometheus/prometheus.yml",
     )
     p.add_argument(
+        "--prometheus_host",
+        help="(Optional) Prometheus Dashboard Server host",
+        default="127.0.0.1",
+    )
+    p.add_argument(
         "--prometheus_job", 
         help="(Optional) Target Prometheus configuration job entry name",
         default="discovered",
-    )
-    p.add_argument(
-        "--prometheus_host", 
-        help="(Optional) Prometheus Dashboard Server host", 
-        default="127.0.0.1",
     )
     p.add_argument(
         "--prometheus_port", 
@@ -342,6 +347,7 @@ if __name__ == '__main__':
     nameSpace = parse_args()
     input_node_exporter_port = nameSpace.exporter_port
     input_node_exporter_metrics_path = nameSpace.exporter_path
+    input_hosts_file = nameSpace.hosts
     input_logging_level = nameSpace.logging * 10
     input_prometheus_config_file = nameSpace.prometheus_config
     input_prometheus_job_name = nameSpace.prometheus_job
@@ -358,7 +364,7 @@ if __name__ == '__main__':
     logger.addHandler(stream)
 
     logger.info("Load all system hosts")
-    known_hosts = parse_known_hosts(HOSTS_FILE)
+    known_hosts = parse_known_hosts(input_hosts_file)
 
     logger.info("Filter hosts by network availability")
     online_hosts_0 = mp_queue(is_host_pingable, known_hosts)
