@@ -15,26 +15,13 @@ from argparse import ArgumentParser
 HOSTS_FILE = "/etc/hosts"
 
 
-def get_logging_level():
-    var = os.getenv("LOGGING_LEVEL", None)
-    if (
-        var is not None
-        and len(var) > 0
-        and hasattr(logging, var)
-    ):
-        val = getattr(logging, var)
-        if isinstance(val, int) and val in [i * 10 for i in range(0, 6)]:
-            return val
-    return logging.ERROR
-
-
 def join_lines(s: str):
     return re.sub("[\r\n ]+", " ", s)
 
 
 def go(cmd: str):
     o = getoutput(cmd)
-    logging.debug(f"Ran command: '{join_lines(cmd)}' with the output: '{o}'")
+    logger.debug(f"Ran command: '{join_lines(cmd)}' with the output: '{o}'")
     return o
 
 
@@ -69,7 +56,7 @@ def split_table(s: str, is_space_delimiter: bool = False):
 
 
 def load_string(file: str):
-    logging.debug(f"Read file: '{file}'")
+    logger.debug(f"Read file: '{file}'")
     with open(file, mode="r", encoding="utf-8") as f:
         o = f.read()
         f.close()
@@ -77,7 +64,7 @@ def load_string(file: str):
 
 
 def dump_string(s: str, file: str):
-    logging.debug(f"Write file: '{file}'")
+    logger.debug(f"Write file: '{file}'")
     with open(file, mode="w", encoding="utf-8") as f:
         f.write(s)
         f.close()
@@ -97,7 +84,7 @@ def backup_file(file: str, force: bool = False):
     backup = f"{file}.bak"
     if not os.path.exists(backup) or force:
         copy2(file, backup)
-        logging.info(f"Created backup: '{backup}'")
+        logger.info(f"Created backup: '{backup}'")
 
 
 def dump_yaml(d: dict, file: str):
@@ -109,7 +96,7 @@ def dump_yaml(d: dict, file: str):
 def nmap(host: str, ports: str):
     o = go(f"sudo nmap -p {ports} -sT -oG - {host} | grep -oP '(?<= )[0-9]+(?=/open/tcp)' 2>/dev/null")
     out = sorted_set(split_lines(o))
-    logging.debug(f"'nmap' with 'grep' for '{host}' returned '{out}'")
+    logger.debug(f"'nmap' with 'grep' for '{host}' returned '{out}'")
     return out
 
 
@@ -124,20 +111,20 @@ def is_url_ok(
             response.close()
             out = response.status_code == 200
             if out:
-                logging.debug(f"Succeed connection attempt {attempt + 1} (of {attempts}) for URL '{url}'")
+                logger.debug(f"Succeed connection attempt {attempt + 1} (of {attempts}) for URL '{url}'")
             else:
-                logging.debug(f"Failed connection attempt {attempt + 1} (of {attempts}) with "
+                logger.debug(f"Failed connection attempt {attempt + 1} (of {attempts}) with "
                               f"code {response.status_code} for URL '{url}'")
             return out
         except Exception as e:
-            logging.debug(f"Failed attempt {attempt + 1} (of {attempts}) with exception '{e}' for URL '{url}'")
+            logger.debug(f"Failed attempt {attempt + 1} (of {attempts}) with exception '{e}' for URL '{url}'")
             pass
-    logging.debug(f"Unreachable url: '{url}'")
+    logger.debug(f"Unreachable url: '{url}'")
     return False
 
 
 def check_ports(host: str, ports: list):
-    logging.debug(f"Ports to check for '{host}': {len(ports)}")
+    logger.debug(f"Ports to check for '{host}': {len(ports)}")
     template = "{scheme}://{host}:{port}{metrics_path}"
     urls = {
         port: template.format(
@@ -149,14 +136,14 @@ def check_ports(host: str, ports: list):
     }
     good_ports = [k for k, v in urls.items() if is_url_ok(v)]
     if len(good_ports) > 0:
-        logging.debug(f"Opened port found for '{host}': {good_ports[0]}")
+        logger.debug(f"Opened port found for '{host}': {good_ports[0]}")
         return good_ports[0]
-    logging.debug(f"No ports found opened for '{host}' within the range '{ports}'")
+    logger.debug(f"No ports found opened for '{host}' within the range '{ports}'")
     return ""
 
 
 def check_host(host: str, ports: str):
-    logging.info(f"Check ports for host '{host}'")
+    logger.info(f"Check ports for host '{host}'")
     open_ports = nmap(host, ports)
     if len(open_ports) > 0:
         port = check_ports(host, open_ports)
@@ -195,9 +182,9 @@ def is_host_pingable(host: str):
     o = go(f"ping -c 5 {host} | grep -oP '(?<= )[0-9]+(?=% packet loss)' 2>/dev/null")
     ready = o.isnumeric() and int(o) < int(os.getenv("PING_PACKET_LOSS_PERCENTAGE", 50))
     if ready:
-        logging.debug(f"The host is pingable: '{host}'")
+        logger.debug(f"The host is pingable: '{host}'")
     else:
-        logging.debug(f"The host is not pingable: '{host}'")
+        logger.debug(f"The host is not pingable: '{host}'")
     return dict(host=host, ready=ready)
 
 
@@ -215,7 +202,7 @@ def wrap(kwargs: dict):
 
 def process_prometheus_config(file: str, hosts: list):
     hosts = sorted_set(hosts)
-    logging.debug(f"Host values to insert: {hosts}")
+    logger.debug(f"Host values to insert: {hosts}")
     d = load_yaml(file)
     is_inserted = False
     if "scrape_configs" not in d.keys() or len(d["scrape_configs"]) == 0:
@@ -229,7 +216,7 @@ def process_prometheus_config(file: str, hosts: list):
             }]
         }]
         is_inserted = True
-        logging.info("Added entire 'scrape_configs' section into Prometheus config")
+        logger.info("Added entire 'scrape_configs' section into Prometheus config")
     for scrape_config_index in range(len(d["scrape_configs"])):
         if (
             not is_inserted
@@ -242,7 +229,7 @@ def process_prometheus_config(file: str, hosts: list):
                     )
                     d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] = hosts_1
                     is_inserted = True
-                    logging.info(f"Updated existing Prometheus config scrape section for job '{input_prometheus_job_name}'")
+                    logger.info(f"Updated existing Prometheus config scrape section for job '{input_prometheus_job_name}'")
                 if (
                     not is_inserted
                     and "targets" not in d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index].keys()
@@ -250,7 +237,7 @@ def process_prometheus_config(file: str, hosts: list):
                 ):
                     d["scrape_configs"][scrape_config_index]["static_configs"][static_config_index]["targets"] = sorted(hosts)
                     is_inserted = True
-                    logging.info(f"Added new Prometheus config scrape section for job '{input_prometheus_job_name}'")
+                    logger.info(f"Added new Prometheus config scrape section for job '{input_prometheus_job_name}'")
     if not is_inserted:
         d["scrape_configs"].append({
             "job_name": input_prometheus_job_name,
@@ -263,12 +250,12 @@ def process_prometheus_config(file: str, hosts: list):
         })
         is_inserted = True
     if not is_inserted:
-        logging.warning(f"Not inserted values: {hosts}")
+        logger.warning(f"Not inserted values: {hosts}")
     dump_yaml(d, file)
 
 
 def reload_prometheus_hard(service_name: str = os.getenv("PROMETHEUS_SERVICE_NAME", "prometheus.service")):
-    logging.info(f"Restart Prometheus service")
+    logger.info(f"Restart Prometheus service")
     return go(f"systemctl restart {service_name}")
 
 
@@ -279,15 +266,15 @@ def reload_prometheus_soft(
         path: str = os.getenv("PROMETHEUS_DASHBOARD_RELOAD_PATH", "/-/reload")
 ):
     url = f"{scheme}://{host}:{port}{path}"
-    logging.info(f"Reload Prometheus via API URL: '{url}'")
+    logger.info(f"Reload Prometheus via API URL: '{url}'")
     try:
         response = post(url, timeout=os.getenv("WEB_ATTEMPT_TIMEOUT", 5))
         response.close()
         if response.status_code == 200:
             return
     except Exception as e:
-        logging.warning(f"Connection to '{url}' failed with error: '{e}'")
-    logging.debug("Failed to soft reload Prometheus via API, try to restart it directly")
+        logger.warning(f"Connection to '{url}' failed with error: '{e}'")
+    logger.debug("Failed to soft reload Prometheus via API, try to restart it directly")
     reload_prometheus_hard()
 
 
@@ -303,18 +290,50 @@ def parse_args():
         description="This tool scans the network for the targets contained in the system hosts file which are also "
                     "available for Prometheus metric scraping. Then the tool adds them into Prometheus configuration "
                     "file and updates the Prometheus server. ",
-        epilog=""
+        epilog="",
     )
-    p.add_argument("--exporter_port", help="(Optional) Node Exporter listen port(s), single or range (via hyphen '-')",
-                   default="9100")
-    p.add_argument("--exporter_path", help="(Optional) Node Exporter metrics path", default="/metrics")
-    p.add_argument("--prometheus_config", help="(Optional) Prometheus Dashboard Server local configuration file",
-                   default="/etc/prometheus/prometheus.yml")
-    p.add_argument("--prometheus_job", help="(Optional) Target Prometheus configuration job entry name",
-                   default="discovered")
-    p.add_argument("--prometheus_host", help="(Optional) Prometheus Dashboard Server host", default="127.0.0.1")
-    p.add_argument("--prometheus_port", help="(Optional) Prometheus Dashboard Server port", default=9090)
-    p.add_argument("--restart", help="(Optional) Restart Prometheus server", action="store_true")
+    p.add_argument(
+        "--exporter_port", 
+        help="(Optional) Node Exporter listen port(s), single or range (via hyphen '-')",
+        default="9100",
+    )
+    p.add_argument(
+        "--exporter_path", 
+        help="(Optional) Node Exporter metrics path", 
+        default="/metrics",
+    )
+    p.add_argument(
+        "--logging",
+        help="(Optional) Logging level",
+        type=int,
+        choices=range(0, 6),
+        default=5,
+    )
+    p.add_argument(
+        "--prometheus_config", 
+        help="(Optional) Prometheus Dashboard Server local configuration file",
+        default="/etc/prometheus/prometheus.yml",
+    )
+    p.add_argument(
+        "--prometheus_job", 
+        help="(Optional) Target Prometheus configuration job entry name",
+        default="discovered",
+    )
+    p.add_argument(
+        "--prometheus_host", 
+        help="(Optional) Prometheus Dashboard Server host", 
+        default="127.0.0.1",
+    )
+    p.add_argument(
+        "--prometheus_port", 
+        help="(Optional) Prometheus Dashboard Server port", 
+        default=9090,
+    )
+    p.add_argument(
+        "--restart", 
+        help="(Optional) Restart Prometheus server", 
+        action="store_true",
+    )
     ns = p.parse_args()
     return ns
 
@@ -323,6 +342,7 @@ if __name__ == '__main__':
     nameSpace = parse_args()
     input_node_exporter_port = nameSpace.exporter_port
     input_node_exporter_metrics_path = nameSpace.exporter_path
+    input_logging_level = nameSpace.logging * 10
     input_prometheus_config_file = nameSpace.prometheus_config
     input_prometheus_job_name = nameSpace.prometheus_job
     input_prometheus_host = nameSpace.prometheus_host
@@ -330,33 +350,33 @@ if __name__ == '__main__':
     input_is_restart = nameSpace.restart
 
     logger = logging.getLogger()
-    logger.setLevel(get_logging_level())
+    logger.setLevel(input_logging_level)
     stream = logging.StreamHandler()
     stream.setFormatter(logging.Formatter(
         u"%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s")
     )
     logger.addHandler(stream)
 
-    logging.info("Load all system hosts")
+    logger.info("Load all system hosts")
     known_hosts = parse_known_hosts(HOSTS_FILE)
 
-    logging.info("Filter hosts by network availability")
+    logger.info("Filter hosts by network availability")
     online_hosts_0 = mp_queue(is_host_pingable, known_hosts)
     online_hosts = [i["host"] for i in online_hosts_0 if i["ready"] is True]
 
     wrapped_queue = [dict(func=check_host, kwargs=dict(host=i, ports=input_node_exporter_port)) for i in online_hosts]
 
-    logging.info("Filter hosts by port availability")
+    logger.info("Filter hosts by port availability")
     ready_hosts_0 = mp_queue(wrap, wrapped_queue)
     ready_hosts = sorted_set([i for i in ready_hosts_0 if len(i) > 0])
 
-    logging.info("Commit changes to Prometheus configuration file")
+    logger.info("Commit changes to Prometheus configuration file")
     process_prometheus_config(
         file=input_prometheus_config_file,
         hosts=ready_hosts
     )
 
-    logging.info("Reload Prometheus")
+    logger.info("Reload Prometheus")
     reload_prometheus(input_is_restart)
 
-    logging.info("Done")
+    logger.info("Done")
