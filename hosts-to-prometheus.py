@@ -189,7 +189,7 @@ def is_host_pingable(host: str):
 
 
 def mp_queue(func, queue: list):
-    with mp.Pool(min(len(queue), mp.cpu_count())) as p:
+    with mp.Pool(mp.cpu_count()) as p:
         out = p.map(func, queue)
         p.close()
         p.join()
